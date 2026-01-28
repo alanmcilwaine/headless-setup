@@ -1,127 +1,96 @@
-# Headless Personal Service Setup
+# Headless MiniPC Setup
 
-I have a mini-pc I want to load with tools like obsidian, minecraft, anki, moltbot etc... This will automate a lot of the distro setup that I'm not really interested in doing myself.
+Headless Debian 12 setup for MoltBot, Anki, Obsidian.
 
-## Layers
-
-```
-There are five layers to this installation.
-
-Base (stuff like the os, users and docker)
-
-Hardening (stuff like the firewall, ssh config)
-
-Tooling (go, rust, npm etc...)
-
-Runtime (this is where moltbot will live, as well as anki, obsidian etc...)
-
-Recovery (snapshots and backups in case something gets messed up)
-```
-
-## 1.
+## Quick Start
 
 ```bash
-scp -r /path/to/headless-setup/ fedora@minipc-ip:/tmp/
-ssh -p 22 fedora@minipc-ip
+scp -r /path/to/headless-setup/ alan@minipc-ip:/tmp/
+ssh -p 2222 alan@minipc-ip
 sudo /tmp/headless-setup/bootstrap.sh all
 ```
 
-## 2. config
-```bash
-sudo rpm-ostree apply-live
+## After Install
 
-# Add SSH key (from macbook)
+```bash
+# Add SSH key from laptop
 ssh-copy-id -p 2222 alan@minipc-ip
 
-# Configure Moltbot, and afterwards setup discord token
-ssh -p 2222 alan@minipc-ip
+# Set MoltBot Discord token
 sudo nano /var/lib/moltbot/.moltbot/moltbot.json
 
-sudo systemctl start moltbot
-sudo ./layers/verify.sh
-```
-
-## Commands to remember
-
-```bash
-# Snapshots
-sudo /opt/minipc/scripts/snapshot.sh "Pre-update"
-snapper list
-sudo /opt/minipc/scripts/restore.sh <number>
-
-# Backup
-sudo /opt/minipc/scripts/backup.sh
-
-# Service
-sudo systemctl start|stop|restart moltbot
-sudo journalctl -u moltbot -f
-
-# Apply silverblue changes
-sudo rpm-ostree apply-live
+# Start everything
+sudo /opt/minipc/scripts/servicectl.sh start all
 
 # Verify
-sudo ./layers/verify.sh
+sudo ./scripts/03-verify.sh
 ```
 
-## Architecture
+## Scripts (scripts/)
 
-```
-This wasn't really covered in layers, as that was installation layers.
+| Script | What it does |
+|--------|--------------|
+| `01-system.sh` | OS, users, SSH port 2222, UFW, fail2ban, Snapper |
+| `02-services.sh` | MoltBot (venv + systemd), Anki (venv), Obsidian (AppImage + Firejail) |
+| `03-verify.sh` | Check everything is running |
 
-Macbook -> Tailscale -> MiniPC -> Firewall -> Docker Network (minipc-network) -> Moltbot Gateway (port 18789?)
-```
-
-**Applying changes:**
-All layers use `rpm-ostree install -A` which stages changes. Apply with:
-```bash
-sudo rpm-ostree apply-live
-```
-**Checking deployments:**
-```bash
-rpm-ostree status  # See current deployment
-rpm-ostree rollback  # Go back to previous deployment
-```
-**Adding more packages later:**
-```bash
-# System packages (persists across reboots)
-sudo rpm-ostree install <package-name>
-sudo rpm-ostree apply-live
-
-# User-space tools (npm, go, cargo)
-npm install -g <tool>
-go install <package>
-cargo install <tool>
-```
-
-## Package management guide
-
-On Silverblue, there are different ways to install things:
-
-| Method | Command | Persists? | Use For |
-|--------|---------|-----------|---------|
-| rpm-ostree | `rpm-ostree install <pkg>` | Yes | System packages (gcc, docker, etc.) |
-| dnf | `dnf install <pkg>` | No | Temporary testing only |
-| Docker | `docker run <image>` | Yes | Services (Minecraft, databases) |
-| User-space | `npm install -g` | Yes | Dev tools (claude-code, etc.) |
-
-## Adding Services (Minecraft, Obsidian, etc.)
-
-For services use docker, it's cleaner and doesn't pollute the system:
+## Services
 
 ```bash
-# Minecraft server
-docker run -d \
-  --name minecraft \
-  -p 25565:25565 \
-  -v /opt/minecraft:/data \
-  -e EULA=TRUE \
-  itzg/minecraft-server
+# Manage services
+sudo /opt/minipc/scripts/servicectl.sh start|stop|restart moltbot|anki|obsidian|all
 
-# Obsidian (headless, for sync)
-docker run -d \
-  --name obsidian \
-  -v /opt/obsidian:/vault \
-  obsidian/obsidian:latest
+# Check logs
+sudo journalctl -u moltbot -f
+
+# Snapshots
+snapper list
 ```
 
-Services go in `docker-compose.yml` in the runtime layer.
+## Structure
+
+```
+/opt/minipc/
+├── scripts/       # servicectl.sh, snapshot scripts
+├── config/        # app configs
+└── data/
+    ├── anki/
+    └── obsidian/
+
+/var/lib/minipc-state/   # state tracking
+/var/lib/moltbot/        # MoltBot home
+/var/log/moltbot/        # MoltBot logs
+```
+
+## MoltBot Sudo
+
+MoltBot can run specific commands without password:
+
+- `apt update`, `apt upgrade`, `apt install`
+- `systemctl start|stop|restart|status`
+- Read vault files
+
+Everything else needs password or is denied.
+
+## Adding Stuff
+
+```bash
+# System packages
+sudo apt install <package>
+# Snapper auto-snapshots on apt ops
+
+# New service
+# Add to scripts/02-services.sh or run manually
+```
+
+## Repository Structure
+
+```
+headless-setup/
+├── bootstrap.sh          # Main entrypoint
+├── README.md             # This file
+└── scripts/
+    ├── 01-system.sh      # OS + security
+    ├── 02-services.sh    # Apps
+    └── 03-verify.sh      # Checks
+```

@@ -1,75 +1,107 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Headless MiniPC Setup - Main Entrypoint (Debian 12)
+# Usage: sudo ./bootstrap.sh [system|services|verify|all]
+
 set -euo pipefail
-# MiniPC Infrastructure - Fedora Silverblue Bootstrap
-# Layers: Base → Hardening → DevTools → Runtime → Recovery
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LAYER="${1:-all}"
 STATE_DIR="/var/lib/minipc-state"
-
-mkdir -p "$STATE_DIR"
+LOG_FILE="${STATE_DIR}/setup.log"
+INSTALLED_MARKER="${STATE_DIR}/.installed"
 
 log() {
-    echo "[$(date +%H:%M:%S)] [$LAYER] $*"
-    echo "[$(date +%Y-%m-%dT%H:%M:%S)] [$LAYER] $*" >> "$STATE_DIR/install.log"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
+}
+
+ensure_state_dir() {
+    mkdir -p "$STATE_DIR"
+    touch "$LOG_FILE"
+}
+
+is_installed() {
+    [[ -f "${INSTALLED_MARKER}.$1" ]]
+}
+
+mark_installed() {
+    touch "${INSTALLED_MARKER}.$1"
 }
 
 run_layer() {
     local layer="$1"
-    local script="$SCRIPT_DIR/layers/$layer.sh"
-    local stamp="$STATE_DIR/${layer}.complete"
-    
-    if [[ -f "$stamp" ]]; then
-        log "Skipping $layer (already done)"
+    local script="${SCRIPT_DIR}/scripts/${layer}.sh"
+
+    if [[ ! -f "$script" ]]; then
+        log "ERROR: Script not found: $script"
+        exit 1
+    fi
+
+    if is_installed "$layer"; then
+        log "Skipping $layer (already installed)"
         return 0
     fi
-    
-    if [[ -f "$script" ]]; then
-        log "Running $layer..."
-        if bash "$script" 2>&1 | tee -a "$STATE_DIR/install.log"; then
-            touch "$stamp"
-            log "✓ $layer complete"
-        else
-            log "✗ $layer failed"
-            return 1
-        fi
+
+    log "=== Running $layer ==="
+    chmod +x "$script"
+    if bash "$script" 2>&1 | tee -a "$LOG_FILE"; then
+        mark_installed "$layer"
+        log "=== $layer completed ==="
     else
-        log "Layer not found: $script"
-        return 1
+        log "ERROR: $layer failed"
+        exit 1
     fi
 }
 
-if [[ $EUID -ne 0 ]]; then
-    echo "Run with: sudo $0 [layer]"
-    echo "Layers: base hardening devtools runtime recovery verify all"
-    echo ""
-    echo "Usage:"
-    echo "  sudo $0 all          # Run all layers"
-    echo "  sudo $0 base         # Layer 1: Base system"
-    echo "  sudo $0 hardening    # Layer 2: Security"
-    echo "  sudo $0 devtools     # Layer 2.5: Development tools"
-    echo "  sudo $0 runtime      # Layer 3: Moltbot"
-    echo "  sudo $0 recovery     # Layer 4: Snapshots"
-    echo "  sudo $0 verify       # Verify installation"
-    exit 1
-fi
+usage() {
+    cat << EOF
+Usage: sudo $0 [system|services|verify|all]
 
-case "$LAYER" in
-    base)        run_layer "10-base" ;;
-    hardening)   run_layer "20-hardening" ;;
-    devtools)    run_layer "25-devtools" ;;
-    runtime)     run_layer "30-runtime" ;;
-    recovery)    run_layer "40-recovery" ;;
-    verify)      bash "$SCRIPT_DIR/layers/verify.sh" ;;
-    all)         run_layer "10-base" && run_layer "20-hardening" && run_layer "25-devtools" && run_layer "30-runtime" && run_layer "40-recovery" ;;
-    *)           echo "Unknown layer: $LAYER"; exit 1 ;;
-esac
+Layers:
+  system   - OS setup, security hardening, Btrfs/Snapper
+  services - Install apps (MoltBot, Anki, Obsidian)
+  verify   - Run compliance checks
+  all      - Run all layers in order
 
-log "Done."
-echo ""
-echo "IMPORTANT: After running layers, apply changes with:"
-echo "  rpm-ostree apply-live"
-echo "  # or"
-echo "  sudo reboot"
-echo ""
-echo "Then verify: sudo ./layers/verify.sh"
+State is tracked in $STATE_DIR
+EOF
+    exit 0
+}
+
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        echo "Error: This script must be run as root (use sudo)"
+        exit 1
+    fi
+}
+
+main() {
+    check_root
+    ensure_state_dir
+
+    if [[ $# -eq 0 ]]; then
+        usage
+    fi
+
+    case "$1" in
+        system)
+            run_layer "01-system"
+            ;;
+        services)
+            run_layer "02-services"
+            ;;
+        verify)
+            run_layer "03-verify"
+            ;;
+        all)
+            run_layer "01-system"
+            run_layer "02-services"
+            run_layer "03-verify"
+            log "=== ALL SETUP COMPLETE ==="
+            ;;
+        *)
+            echo "Unknown argument: $1"
+            usage
+            ;;
+    esac
+}
+
+main "$@"

@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-# Verification script for Silverblue
+# Verification script - checks all layers
 
 log() { echo "[VERIFY] $*"; }
 
@@ -12,19 +12,11 @@ fail() { echo "  ✗ $1"; ((ERRORS++)); }
 warn() { echo "  ⚠ $1"; ((WARNINGS++)); }
 
 echo ""
-echo "=== MiniPC Verification (Fedora Silverblue) ==="
-
-echo ""
-echo "OS:"
-if [[ -f /run/ostree-booted ]]; then
-    pass "Fedora Silverblue/Kinoite detected"
-else
-    warn "Not running Silverblue"
-fi
+echo "=== MiniPC Verification ==="
 
 echo ""
 echo "Users:"
-id alan &>/dev/null && pass "alan user" || fail "alan user"
+id deploy &>/dev/null && pass "deploy user" || fail "deploy user"
 id moltbot &>/dev/null && pass "moltbot user" || fail "moltbot user"
 
 echo ""
@@ -35,7 +27,8 @@ grep -q "PasswordAuthentication no" /etc/ssh/sshd_config.d/*.conf 2>/dev/null &&
 
 echo ""
 echo "Firewall:"
-systemctl is-active firewalld &>/dev/null && pass "firewalld active" || fail "firewalld not active"
+systemctl is-active ufw &>/dev/null && pass "UFW active" || \
+    systemctl is-active firewalld &>/dev/null && pass "firewalld active" || warn "No firewall active"
 
 echo ""
 echo "Docker:"
@@ -66,8 +59,6 @@ echo "Errors: $ERRORS, Warnings: $WARNINGS"
 
 if [[ $ERRORS -eq 0 ]]; then
     echo "✓ System looks good"
-    echo ""
-    echo "Remember to run: rpm-ostree apply-live or reboot"
     exit 0
 else
     echo "✗ Fix errors above"

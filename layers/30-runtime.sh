@@ -1,31 +1,24 @@
 #!/bin/bash
 set -euo pipefail
-# Layer 3: Runtime - Node.js and Moltbot
+# Layer 3: Runtime - Docker and Moltbot
 
 log() { echo "[RUNTIME] $*"; }
 
 install_node() {
-    log "Installing Node.js 22..."
-    
+    log "Installing Node.js..."
     if ! command -v node &>/dev/null; then
-        curl -fsSL https://rpm.nodesource.com/setup_22.x | bash -
-        dnf install -y nodejs
+        rpm-ostree install -y nodejs --idempotent --allow-inactive
     fi
-    
-    log "Node.js $(node --version) installed"
 }
 
 install_moltbot() {
     log "Installing Moltbot..."
-    
     mkdir -p /var/lib/moltbot
     chown moltbot:moltbot /var/lib/moltbot
     
     cd /var/lib/moltbot
     npm install -g moltbot@latest 2>/dev/null || true
     chown -R moltbot:moltbot /var/lib/moltbot
-    
-    log "Moltbot installed"
 }
 
 configure_moltbot() {
@@ -70,8 +63,6 @@ EOF
     echo "$TOKEN" > /var/lib/moltbot/.moltbot/gateway-token.txt
     chown moltbot:moltbot /var/lib/moltbot/.moltbot/gateway-token.txt
     chmod 600 /var/lib/moltbot/.moltbot/gateway-token.txt
-    
-    log "Moltbot configured"
 }
 
 create_service() {
@@ -81,7 +72,6 @@ create_service() {
 [Unit]
 Description=Moltbot Personal AI Assistant
 After=network-online.target docker.service
-Wants=network-online.target
 
 [Service]
 Type=simple
@@ -112,19 +102,12 @@ configure_docker_network() {
     docker network create minipc-network 2>/dev/null || true
 }
 
-main() {
-    install_node
-    configure_docker_network
-    install_moltbot
-    configure_moltbot
-    create_service
-    
-    log ""
-    log "Runtime setup complete."
-    log "Next steps:"
-    log "  1. Add DISCORD_TOKEN to /var/lib/moltbot/.moltbot/moltbot.json"
-    log "  2. sudo systemctl start moltbot"
-    log "  3. sudo systemctl status moltbot"
-}
+install_node
+configure_docker_network
+install_moltbot
+configure_moltbot
+create_service
 
-main
+log "Runtime setup complete."
+log "Add Discord token to /var/lib/moltbot/.moltbot/moltbot.json"
+log "Run: sudo systemctl start moltbot"

@@ -83,6 +83,45 @@ rpm-ostree rollback  # Go back to previous deployment
 ```
 **Adding more packages later:**
 ```bash
+# System packages (persists across reboots)
 sudo rpm-ostree install <package-name>
 sudo rpm-ostree apply-live
+
+# User-space tools (npm, go, cargo)
+npm install -g <tool>
+go install <package>
+cargo install <tool>
 ```
+
+## Package management guide
+
+On Silverblue, there are different ways to install things:
+
+| Method | Command | Persists? | Use For |
+|--------|---------|-----------|---------|
+| rpm-ostree | `rpm-ostree install <pkg>` | Yes | System packages (gcc, docker, etc.) |
+| dnf | `dnf install <pkg>` | No | Temporary testing only |
+| Docker | `docker run <image>` | Yes | Services (Minecraft, databases) |
+| User-space | `npm install -g` | Yes | Dev tools (claude-code, etc.) |
+
+## Adding Services (Minecraft, Obsidian, etc.)
+
+For services use docker, it's cleaner and doesn't pollute the system:
+
+```bash
+# Minecraft server
+docker run -d \
+  --name minecraft \
+  -p 25565:25565 \
+  -v /opt/minecraft:/data \
+  -e EULA=TRUE \
+  itzg/minecraft-server
+
+# Obsidian (headless, for sync)
+docker run -d \
+  --name obsidian \
+  -v /opt/obsidian:/vault \
+  obsidian/obsidian:latest
+```
+
+Services go in `docker-compose.yml` in the runtime layer.

@@ -27,8 +27,8 @@ install_base_packages() {
         python3 python3-venv python3-pip \
         sudo apparmor apparmor-utils \
         firejail \
-        NetworkManager cloud-init \
-        systemd-swap
+        network-manager cloud-init \
+        zram-tools
 }
 
 create_users() {

@@ -298,10 +298,13 @@ install_tailscale() {
         return 0
     fi
 
-    curl -fsSL https://pkgs.tailscale.com/stable/debian/tailscale.gpg -o /usr/share/keyrings/tailscale-archive-keyring.gpg
-    echo "deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/debian bookworm main" > /etc/apt/sources.list.d/tailscale.list
-    apt-get update
-    apt-get install -y tailscale
+    # Fix hostname resolution for sudo
+    if ! grep -q "127.0.1.1.*$(hostname)" /etc/hosts; then
+        echo "127.0.1.1 $(hostname)" >> /etc/hosts
+    fi
+
+    # Install Tailscale using official install script
+    curl -fsSL https://tailscale.com/install.sh | sh
 
     systemctl enable tailscaled
     systemctl start tailscaled

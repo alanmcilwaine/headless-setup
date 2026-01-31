@@ -293,14 +293,20 @@ install_tailscale() {
 
     log_info "Installing Tailscale..."
 
-    if command_exists tailscale; then
-        log_info "Tailscale already installed"
-        return 0
+    # Fix hostname resolution for sudo
+    local current_hostname
+    current_hostname=$(hostname)
+    if ! grep -q "127.0.1.1.*${current_hostname}" /etc/hosts; then
+        # Remove any old 127.0.1.1 entries and add the current hostname
+        sed -i '/^127.0.1.1/d' /etc/hosts
+        echo "127.0.1.1 ${current_hostname}" >> /etc/hosts
     fi
 
-    # Fix hostname resolution for sudo
-    if ! grep -q "127.0.1.1.*$(hostname)" /etc/hosts; then
-        echo "127.0.1.1 $(hostname)" >> /etc/hosts
+    if command_exists tailscale; then
+        log_info "Tailscale already installed, ensuring service is enabled and started"
+        systemctl enable tailscaled
+        systemctl start tailscaled
+        return 0
     fi
 
     # Install Tailscale using official install script

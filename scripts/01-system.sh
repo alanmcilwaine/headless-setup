@@ -243,6 +243,9 @@ create_directories() {
     # App data directories
     mkdir -p /opt/minipc/data/{obsidian,anki}
 
+    # Privilege escalation directories
+    mkdir -p "/var/lib/${service_user}"/{requests,approved}
+
     # Set ownership
     chown -R "${service_user}:${service_user}" "/var/lib/${service_user}"
     chown -R "${service_user}:${service_user}" "/var/log/${service_user}"

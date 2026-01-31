@@ -43,6 +43,7 @@ User=${service_user}
 Group=${service_user}
 WorkingDirectory=${service_home}
 Environment="HOME=${service_home}"
+EnvironmentFile=/var/lib/${service_user}/.openclaw/openclaw.env
 ExecStart=${venv}/bin/python -m openclaw
 Restart=always
 RestartSec=10
@@ -61,11 +62,22 @@ EOF
 
 app_configure() {
     local service_user="${MINIPC_SERVICE_USER:-openclaw}"
-    local config_file="${service_home}/.openclaw/openclaw.json"
+    local service_home="/var/lib/${service_user}"
+    local env_file="${service_home}/.openclaw/openclaw.env"
 
-    if [[ ! -f "${config_file}" ]]; then
-        log_warn "Openclaw config not found at ${config_file}"
-        log_info "Create it with your Discord token, then run:"
-        log_info "  sudo systemctl start openclaw"
+    if [[ ! -f "${env_file}" ]]; then
+        log_warn "Openclaw environment file not found at ${env_file}"
+        log_info "Create it with your Discord token:"
+        log_info "  sudo mkdir -p ${service_home}/.openclaw"
+        log_info "  sudo chmod 700 ${service_home}/.openclaw"
+        log_info "  sudo tee ${env_file} << 'EOF'"
+        log_info 'OPENCLAW_DISCORD_TOKEN=your_token_here'
+        log_info 'EOF'
+        log_info "  sudo chmod 600 ${env_file}"
+        log_info "  sudo chown ${service_user}:${service_user} ${env_file}"
+        log_info "Then run: sudo systemctl start openclaw"
+    else
+        log_info "Openclaw environment file exists at ${env_file}"
+        log_info "Ensure it contains: OPENCLAW_DISCORD_TOKEN=your_token"
     fi
 }

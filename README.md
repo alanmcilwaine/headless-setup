@@ -15,8 +15,14 @@ sudo /tmp/headless-setup/bootstrap.sh all
 ```bash
 ssh-copy-id -p 2222 alan@minipc-ip
 
-# set the discord token here
-sudo nvim /var/lib/openclaw/.openclaw/openclaw.json
+# set the discord token here (environment file, not JSON)
+sudo mkdir -p /var/lib/openclaw/.openclaw
+sudo chmod 700 /var/lib/openclaw/.openclaw
+sudo tee /var/lib/openclaw/.openclaw/openclaw.env << 'EOF'
+OPENCLAW_DISCORD_TOKEN=your_token_here
+EOF
+sudo chmod 600 /var/lib/openclaw/.openclaw/openclaw.env
+sudo chown openclaw:openclaw /var/lib/openclaw/.openclaw/openclaw.env
 
 sudo /opt/minipc/scripts/servicectl.sh start all
 sudo ./scripts/03-verify.sh
@@ -39,11 +45,32 @@ snapper list
 
 Openclaw can run specific commands without password:
 
-- `apt update`, `apt upgrade`, `apt install`
-- `systemctl start|stop|restart|status`
+- `apt *` - Full package management (install, remove, update, upgrade, etc.)
+- `systemctl *` - Full systemd control (start, stop, restart, enable, etc.)
+- **File operations:** `mkdir`, `rm`, `mv`, `cp`, `touch`, `cat`, `ls`, `find`, `grep`, `head`, `tail`, `sed`, `awk`, `tee`, `chmod`, `chown`, `ln`, etc.
+- **Text processing:** `cut`, `sort`, `uniq`, `wc`, `tr`, `xargs`
+- **Git:** Full git operations (clone, commit, push, pull, etc.)
+- **Python:** `python3`, `pip3`, `pip` - Run scripts and install packages
+- **Node.js:** `node`, `npm`, `npx` - Run Node apps and install packages
+- **Docker:** `docker`, `docker-compose` - Container management
+- **Network:** `curl`, `wget`, `ping`, `netstat`, `ss`, `dig`, `nslookup`, `host`, `whois`
+- **Process management:** `kill`, `pkill`, `killall`, `ps`, `top`, `htop`, `pgrep`, `pidof`, `nohup`, `screen`, `tmux`
+- **Editors:** `nano`, `vim`, `vi`
+- **Archives:** `tar`, `gzip`, `gunzip`, `unzip`, `zip`, `bzip2`, `xz`, `7z`
+- **System info:** `df`, `du`, `free`, `uptime`, `uname`, `hostname`, `date`
+- **Shell utilities:** `env`, `echo`, `printf`, `test`, `sleep`, `timeout`, `time`
 - Read vault files
 
-Everything else needs password or is denied.
+This gives openclaw full flexibility to manage the system, files, and run any development tools through Discord.
+
+## Security Note
+
+Openclaw has broad sudo privileges for convenience. The service runs as a dedicated user and has access to:
+- Install/update packages
+- Manage all systemd services
+- Read vault files
+
+SSH access is key-only on port 2222 with fail2ban protection.
 
 ## Adding a New App
 

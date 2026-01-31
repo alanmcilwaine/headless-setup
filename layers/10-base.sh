@@ -38,10 +38,10 @@ if ! id "deploy" &>/dev/null; then
     usermod -aG sudo,docker deploy
 fi
 
-if ! id "moltbot" &>/dev/null; then
-    log "Creating moltbot user..."
-    useradd -r -s /usr/sbin/nologin -d /var/lib/moltbot -m moltbot
-    usermod -aG docker moltbot
+if ! id "openclaw" &>/dev/null; then
+    log "Creating openclaw user..."
+    useradd -r -s /usr/sbin/nologin -d /var/lib/openclaw -m openclaw
+    usermod -aG docker openclaw
 fi
 
 mkdir -p /etc/systemd/system/docker.service.d

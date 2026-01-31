@@ -14,7 +14,7 @@ Port 2222
 PermitRootLogin no
 PasswordAuthentication no
 PubkeyAuthentication yes
-AllowUsers deploy moltbot
+AllowUsers deploy openclaw
 EOF
     systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null
 }

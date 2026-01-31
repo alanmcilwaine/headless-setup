@@ -2,112 +2,126 @@
 # 03-verify.sh - Compliance and verification checks
 set -euo pipefail
 
-STATE_DIR="/var/lib/minipc-state"
-LOG_FILE="${STATE_DIR}/setup.log"
+SCRIPT_DIR="${SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+
+# Source libraries
+# shellcheck source=../lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
+
+# Load configuration
+load_config
+
+# Counters
 PASS=0
 FAIL=0
 WARN=0
 
-log() {
-    echo "[VERIFY] $(date '+%Y-%m-%d %H:%M:%S') - $*" | tee -a "$LOG_FILE"
-}
-
 check_pass() {
-    echo "✓ PASS: $*"
+    echo -e "${GREEN}✓ PASS:${NC} $*"
     ((PASS++))
 }
 
 check_fail() {
-    echo "✗ FAIL: $*"
+    echo -e "${RED}✗ FAIL:${NC} $*"
     ((FAIL++))
 }
 
 check_warn() {
-    echo "⚠ WARN: $*"
+    echo -e "${YELLOW}⚠ WARN:${NC} $*"
     ((WARN++))
 }
 
-check_status() {
-    local name="$1"
-    local command="$2"
-
-    if eval "$command" &>/dev/null; then
-        check_pass "$name"
-    else
-        check_fail "$name"
-    fi
-}
-
 verify_os() {
-    log "=== Verifying OS ==="
+    log_info "=== Verifying OS ==="
 
-    if [[ -f /etc/os-release ]]; then
-        source /etc/os-release
-        if [[ "$ID" == "debian" && "$VERSION_ID" == "12" ]]; then
-            check_pass "OS is Debian 12"
-        else
-            check_fail "OS is not Debian 12 (detected: $ID $VERSION_ID)"
-        fi
+    if is_debian12; then
+        check_pass "OS is Debian 12"
     else
-        check_fail "Cannot determine OS version"
+        check_fail "OS is not Debian 12"
     fi
 }
 
 verify_users() {
-    log "=== Verifying Users ==="
+    log_info "=== Verifying Users ==="
 
-    if id "alan" &>/dev/null; then
-        check_pass "User alan exists"
+    local admin_user="${MINIPC_ADMIN_USER}"
+    local service_user="${MINIPC_SERVICE_USER}"
+
+    if user_exists "$admin_user"; then
+        check_pass "User $admin_user exists"
     else
-        check_fail "User alan does not exist"
+        check_fail "User $admin_user does not exist"
     fi
 
-    if id "moltbot" &>/dev/null; then
-        check_pass "User moltbot exists"
+    if user_exists "$service_user"; then
+        check_pass "User $service_user exists"
     else
-        check_fail "User moltbot does not exist"
+        check_fail "User $service_user does not exist"
     fi
 }
 
-verify_sudo_moltbot() {
-    log "=== Verifying MoltBot Sudo Permissions ==="
+verify_sudo_openclaw() {
+    log_info "=== Verifying Service User Sudo Permissions ==="
 
-    if [[ -f /etc/sudoers.d/moltbot ]]; then
-        check_pass "MoltBot sudoers file exists"
-        if grep -q "moltbot ALL=(ALL) NOPASSWD" /etc/sudoers.d/moltbot; then
-            check_pass "MoltBot has NOPASSWD sudo"
+    local service_user="${MINIPC_SERVICE_USER}"
+
+    if [[ -f "/etc/sudoers.d/${service_user}" ]]; then
+        check_pass "Sudoers file exists for $service_user"
+
+        # Check for wildcards (security concern)
+        if grep -q '\*' "/etc/sudoers.d/${service_user}"; then
+            check_fail "Sudoers file contains wildcards (security risk)"
         else
-            check_fail "MoltBot NOPASSWD sudo not configured"
+            check_pass "Sudoers file has no wildcards"
+        fi
+
+        # Verify syntax
+        if visudo -c -f "/etc/sudoers.d/${service_user}" 2>/dev/null; then
+            check_pass "Sudoers file syntax is valid"
+        else
+            check_fail "Sudoers file syntax is invalid"
         fi
     else
-        check_fail "MoltBot sudoers file missing"
+        check_warn "Sudoers file missing for $service_user"
     fi
 }
 
 verify_ssh() {
-    log "=== Verifying SSH Configuration ==="
+    log_info "=== Verifying SSH Configuration ==="
 
-    if systemctl is-active --quiet sshd; then
+    local ssh_port="${SSH_PORT}"
+
+    if service_is_active sshd; then
         check_pass "SSH daemon is running"
     else
         check_fail "SSH daemon is not running"
     fi
 
-    if grep -q "^Port 2222" /etc/ssh/sshd_config.d/minipc.conf 2>/dev/null; then
-        check_pass "SSH port is 2222"
-    else
-        check_fail "SSH port is not 2222"
-    fi
+    if [[ -f /etc/ssh/sshd_config.d/minipc.conf ]]; then
+        if grep -q "^Port ${ssh_port}" /etc/ssh/sshd_config.d/minipc.conf; then
+            check_pass "SSH port is $ssh_port"
+        else
+            check_fail "SSH port is not $ssh_port"
+        fi
 
-    if grep -q "^PasswordAuthentication no" /etc/ssh/sshd_config.d/minipc.conf 2>/dev/null; then
-        check_pass "SSH password auth disabled"
+        if grep -q "^PasswordAuthentication no" /etc/ssh/sshd_config.d/minipc.conf; then
+            check_pass "SSH password auth disabled"
+        else
+            check_fail "SSH password auth not disabled"
+        fi
+
+        if grep -q "^PermitRootLogin no" /etc/ssh/sshd_config.d/minipc.conf; then
+            check_pass "SSH root login disabled"
+        else
+            check_fail "SSH root login not disabled"
+        fi
     else
-        check_fail "SSH password auth not disabled"
+        check_fail "SSH config file /etc/ssh/sshd_config.d/minipc.conf missing"
     fi
 }
 
 verify_firewall() {
-    log "=== Verifying Firewall ==="
+    log_info "=== Verifying Firewall ==="
 
     if ufw status | grep -q "Status: active"; then
         check_pass "UFW is active"
@@ -115,17 +129,27 @@ verify_firewall() {
         check_fail "UFW is not active"
     fi
 
-    if ufw status | grep -q "2222/tcp"; then
-        check_pass "SSH port 2222 allowed in firewall"
+    local ssh_port="${SSH_PORT}"
+    if ufw status | grep -q "${ssh_port}/tcp"; then
+        check_pass "SSH port $ssh_port allowed in firewall"
     else
-        check_fail "SSH port 2222 not allowed in firewall"
+        check_fail "SSH port $ssh_port not allowed in firewall"
     fi
+
+    # Check configured ports
+    for port in ${FIREWALL_ALLOW_TCP}; do
+        if ufw status | grep -q "${port}/tcp"; then
+            check_pass "Port $port/tcp allowed"
+        else
+            check_warn "Port $port/tcp not allowed"
+        fi
+    done
 }
 
 verify_fail2ban() {
-    log "=== Verifying Fail2Ban ==="
+    log_info "=== Verifying Fail2Ban ==="
 
-    if systemctl is-active --quiet fail2ban; then
+    if service_is_active fail2ban; then
         check_pass "Fail2Ban is running"
     else
         check_fail "Fail2Ban is not running"
@@ -139,9 +163,9 @@ verify_fail2ban() {
 }
 
 verify_audit() {
-    log "=== Verifying Audit ==="
+    log_info "=== Verifying Audit ==="
 
-    if systemctl is-active --quiet auditd; then
+    if service_is_active auditd; then
         check_pass "Auditd is running"
     else
         check_fail "Auditd is not running"
@@ -149,111 +173,17 @@ verify_audit() {
 }
 
 verify_apparmor() {
-    log "=== Verifying AppArmor ==="
+    log_info "=== Verifying AppArmor ==="
 
-    if systemctl is-active --quiet apparmor; then
+    if service_is_active apparmor; then
         check_pass "AppArmor is running"
     else
         check_warn "AppArmor is not running"
     fi
-
-    if apparmor_status 2>/dev/null | grep -q "moltbot"; then
-        check_pass "MoltBot AppArmor profile loaded"
-    else
-        check_warn "MoltBot AppArmor profile not loaded"
-    fi
-}
-
-verify_moltbot() {
-    log "=== Verifying MoltBot Service ==="
-
-    if systemctl is-enabled --quiet moltbot; then
-        check_pass "MoltBot service is enabled"
-    else
-        check_fail "MoltBot service is not enabled"
-    fi
-
-    if systemctl is-active --quiet moltbot; then
-        check_pass "MoltBot service is active"
-    else
-        check_warn "MoltBot service is not active"
-    fi
-
-    if [[ -d /var/lib/moltbot/venv ]]; then
-        check_pass "MoltBot venv exists"
-    else
-        check_fail "MoltBot venv missing"
-    fi
-
-    if [[ -f /var/lib/moltbot/.moltbot/moltbot.json ]]; then
-        check_pass "MoltBot config exists"
-    else
-        check_fail "MoltBot config missing"
-    fi
-}
-
-verify_anki() {
-    log "=== Verifying Anki Service ==="
-
-    if systemctl is-enabled --quiet anki; then
-        check_pass "Anki service is enabled"
-    else
-        check_warn "Anki service is not enabled"
-    fi
-
-    if [[ -d /opt/minipc/data/anki/venv ]]; then
-        check_pass "Anki venv exists"
-    else
-        check_fail "Anki venv missing"
-    fi
-}
-
-verify_obsidian() {
-    log "=== Verifying Obsidian ==="
-
-    if [[ -f /opt/minipc/data/obsidian/obsidian.AppImage ]]; then
-        check_pass "Obsidian AppImage exists"
-    else
-        check_fail "Obsidian AppImage missing"
-    fi
-
-    if systemctl is-enabled --quiet obsidian; then
-        check_pass "Obsidian service is enabled"
-    else
-        check_warn "Obsidian service is not enabled"
-    fi
-
-    if [[ -f /etc/firejail/obsidian.profile ]]; then
-        check_pass "Obsidian Firejail profile exists"
-    else
-        check_fail "Obsidian Firejail profile missing"
-    fi
-}
-
-verify_btrfs_snapper() {
-    log "=== Verifying Btrfs/Snapper ==="
-
-    if mountpoint -q / && [[ "$(stat -f -c %T /)" == "btrfs" ]]; then
-        check_pass "Root is Btrfs"
-
-        if command -v snapper &>/dev/null; then
-            check_pass "Snapper is installed"
-
-            if snapper list | grep -q "Root"; then
-                check_pass "Snapper config exists for root"
-            else
-                check_warn "Snapper config missing for root"
-            fi
-        else
-            check_fail "Snapper not installed"
-        fi
-    else
-        check_warn "Root is not Btrfs (snapshots disabled)"
-    fi
 }
 
 verify_security_hardening() {
-    log "=== Verifying Security Hardening ==="
+    log_info "=== Verifying Security Hardening ==="
 
     if sysctl kernel.randomize_va_space 2>/dev/null | grep -q "= 2"; then
         check_pass "ASLR enabled"
@@ -274,21 +204,46 @@ verify_security_hardening() {
     fi
 }
 
+verify_btrfs_snapper() {
+    log_info "=== Verifying Btrfs/Snapper ==="
+
+    if [[ "${ENABLE_BTRFS_SNAPSHOTS:-false}" != "true" ]]; then
+        check_pass "Btrfs snapshots disabled in config (skipping)"
+        return 0
+    fi
+
+    if mountpoint -q / && [[ "$(stat -f -c %T /)" == "btrfs" ]]; then
+        check_pass "Root is Btrfs"
+
+        if command_exists snapper; then
+            check_pass "Snapper is installed"
+
+            if snapper list &>/dev/null; then
+                check_pass "Snapper config exists for root"
+            else
+                check_warn "Snapper config missing for root"
+            fi
+        else
+            check_fail "Snapper not installed"
+        fi
+    else
+        check_warn "Root is not Btrfs (snapshots disabled)"
+    fi
+}
+
 verify_directories() {
-    log "=== Verifying Directories ==="
+    log_info "=== Verifying Directories ==="
+
+    local service_user="${MINIPC_SERVICE_USER}"
 
     local dirs=(
         "/opt/minipc"
         "/opt/minipc/scripts"
         "/opt/minipc/config"
         "/opt/minipc/data"
-        "/var/lib/minipc-state"
-        "/var/lib/moltbot"
-        "/var/lib/moltbot/.moltbot"
-        "/var/lib/moltbot/vault"
-        "/var/log/moltbot"
-        "/opt/minipc/data/anki"
-        "/opt/minipc/data/obsidian"
+        "${STATE_DIR}"
+        "/var/lib/${service_user}"
+        "/var/log/${service_user}"
     )
 
     for dir in "${dirs[@]}"; do
@@ -300,20 +255,57 @@ verify_directories() {
     done
 }
 
-verify_network() {
-    log "=== Verifying Network Configuration ==="
+verify_app() {
+    local app_name="$1"
+    local app_file="${APPS_DIR}/${app_name}.sh"
 
-    if ufw status | grep -q "8080/tcp"; then
-        check_pass "MoltBot HTTP port 8080 allowed"
-    else
-        check_warn "MoltBot HTTP port 8080 not allowed"
+    log_info "=== Verifying App: $app_name ==="
+
+    if [[ ! -f "$app_file" ]]; then
+        check_fail "App file not found: $app_file"
+        return 1
     fi
 
-    if ufw status | grep -q "8765/tcp"; then
-        check_pass "MoltBot API port 8765 allowed"
+    # Source the app file
+    # shellcheck source=/dev/null
+    source "$app_file"
+
+    # Run app's verify function
+    if declare -f app_verify &>/dev/null; then
+        if app_verify; then
+            check_pass "$app_name verification passed"
+        else
+            check_fail "$app_name verification failed"
+        fi
     else
-        check_warn "MoltBot API port 8765 not allowed"
+        check_warn "$app_name has no verify function"
     fi
+
+    # Check if service exists and is enabled
+    if systemctl list-unit-files | grep -q "^${app_name}.service"; then
+        if service_is_enabled "$app_name"; then
+            check_pass "$app_name service is enabled"
+        else
+            check_warn "$app_name service is not enabled"
+        fi
+    fi
+
+    # Check AppArmor profile if exists
+    if [[ -f "/etc/apparmor.d/${app_name}" ]]; then
+        if apparmor_status 2>/dev/null | grep -q "$app_name"; then
+            check_pass "$app_name AppArmor profile loaded"
+        else
+            check_warn "$app_name AppArmor profile not loaded"
+        fi
+    fi
+}
+
+verify_enabled_apps() {
+    log_info "=== Verifying Enabled Applications ==="
+
+    for app in ${ENABLED_APPS}; do
+        verify_app "$app"
+    done
 }
 
 print_summary() {
@@ -321,50 +313,47 @@ print_summary() {
     echo "========================================"
     echo "           VERIFICATION SUMMARY"
     echo "========================================"
-    echo "  ✓ Passed:  $PASS"
-    echo "  ✗ Failed:  $FAIL"
-    echo "  ⚠ Warnings: $WARN"
+    echo -e "  ${GREEN}✓ Passed:${NC}   $PASS"
+    echo -e "  ${RED}✗ Failed:${NC}   $FAIL"
+    echo -e "  ${YELLOW}⚠ Warnings:${NC} $WARN"
     echo "========================================"
 
     if [[ $FAIL -gt 0 ]]; then
         echo ""
-        echo "ERROR: $FAIL critical checks failed!"
+        echo -e "${RED}ERROR: $FAIL critical checks failed!${NC}"
         echo "Please review the failures above."
         exit 1
     fi
 
     if [[ $WARN -gt 0 ]]; then
         echo ""
-        echo "WARNING: $WARN non-critical checks have warnings."
+        echo -e "${YELLOW}WARNING: $WARN non-critical checks have warnings.${NC}"
         echo "Review and address as needed."
     fi
 
     echo ""
-    echo "SUCCESS: All critical checks passed!"
+    echo -e "${GREEN}SUCCESS: All critical checks passed!${NC}"
 }
 
 main() {
-    log "=== Starting 03-verify.sh ==="
+    log_info "=== Starting 03-verify.sh ==="
 
     verify_os
     verify_users
-    verify_sudo_moltbot
+    verify_sudo_openclaw
     verify_ssh
     verify_firewall
     verify_fail2ban
     verify_audit
     verify_apparmor
-    verify_moltbot
-    verify_anki
-    verify_obsidian
-    verify_btrfs_snapper
     verify_security_hardening
+    verify_btrfs_snapper
     verify_directories
-    verify_network
+    verify_enabled_apps
 
     print_summary
 
-    log "=== 03-verify.sh complete ==="
+    log_success "=== 03-verify.sh complete ==="
 }
 
 main

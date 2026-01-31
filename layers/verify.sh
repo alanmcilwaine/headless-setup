@@ -17,7 +17,7 @@ echo "=== MiniPC Verification ==="
 echo ""
 echo "Users:"
 id deploy &>/dev/null && pass "deploy user" || fail "deploy user"
-id moltbot &>/dev/null && pass "moltbot user" || fail "moltbot user"
+id openclaw &>/dev/null && pass "openclaw user" || fail "openclaw user"
 
 echo ""
 echo "SSH:"
@@ -36,15 +36,15 @@ systemctl is-active docker &>/dev/null && pass "Docker running" || fail "Docker 
 docker network inspect minipc &>/dev/null && pass "minipc network exists" || warn "minipc network missing"
 
 echo ""
-echo "Moltbot:"
-command -v moltbot &>/dev/null && pass "Moltbot installed" || fail "Moltbot not installed"
-systemctl is-enabled moltbot &>/dev/null && pass "Moltbot enabled" || warn "Moltbot not enabled"
-systemctl is-active moltbot &>/dev/null && pass "Moltbot running" || warn "Moltbot not running"
-[[ -f /var/lib/moltbot/.moltbot/moltbot.json ]] && pass "Config exists" || fail "Config missing"
+echo "Openclaw:"
+command -v openclaw &>/dev/null && pass "Openclaw installed" || fail "Openclaw not installed"
+systemctl is-enabled openclaw &>/dev/null && pass "Openclaw enabled" || warn "Openclaw not enabled"
+systemctl is-active openclaw &>/dev/null && pass "Openclaw running" || warn "Openclaw not running"
+[[ -f /var/lib/openclaw/.openclaw/openclaw.json ]] && pass "Config exists" || fail "Config missing"
 
-if [[ -f /var/lib/moltbot/.moltbot/moltbot.json ]]; then
-    grep -q '"dmPolicy":\s*"pairing"' /var/lib/moltbot/.moltbot/moltbot.json && pass "DM pairing" || warn "DM pairing off"
-    grep -q '"bind":\s*"loopback"' /var/lib/moltbot/.moltbot/moltbot.json && pass "Loopback bind" || warn "Loopback bind off"
+if [[ -f /var/lib/openclaw/.openclaw/openclaw.json ]]; then
+    grep -q '"dmPolicy":\s*"pairing"' /var/lib/openclaw/.openclaw/openclaw.json && pass "DM pairing" || warn "DM pairing off"
+    grep -q '"bind":\s*"loopback"' /var/lib/openclaw/.openclaw/openclaw.json && pass "Loopback bind" || warn "Loopback bind off"
 fi
 
 echo ""

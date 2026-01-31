@@ -2,35 +2,25 @@
 # 01-system.sh - OS setup and security hardening for Debian 12
 set -euo pipefail
 
-STATE_DIR="/var/lib/minipc-state"
-CONFIG_DIR="/opt/minipc/config"
-LOG_FILE="${STATE_DIR}/setup.log"
+SCRIPT_DIR="${SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
-log() {
-    echo "[SYSTEM] $(date '+%Y-%m-%d %H:%M:%S') - $*" | tee -a "$LOG_FILE"
-}
+# Source libraries
+# shellcheck source=../lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=../lib/security.sh
+source "${SCRIPT_DIR}/lib/security.sh"
 
-is_debian12() {
-    source /etc/os-release
-    [[ "$ID" == "debian" && "$VERSION_ID" == "12" ]]
-}
-
-require_debian12() {
-    if ! is_debian12; then
-        log "ERROR: This script requires Debian 12. Detected: $(source /etc/os-release && echo "$ID $VERSION_ID")"
-        exit 1
-    fi
-}
+# Load configuration
+load_config
 
 update_system() {
-    log "Updating apt packages..."
-    export DEBIAN_FRONTEND=noninteractive
+    log_info "Updating apt packages..."
     apt-get update
     apt-get upgrade -y
 }
 
 install_base_packages() {
-    log "Installing base packages..."
+    log_info "Installing base packages..."
     apt-get install -y \
         curl wget git htop btrfs-progs \
         ufw fail2ban auditd \
@@ -42,72 +32,81 @@ install_base_packages() {
 }
 
 create_users() {
-    log "Creating system users..."
+    log_info "Creating system users..."
 
-    if ! id "alan" &>/dev/null; then
-        log "Creating alan user..."
-        useradd -m -s /bin/bash -u 1000 alan
-        usermod -aG sudo,adm,systemd-journal alan
+    local admin_user="${MINIPC_ADMIN_USER}"
+    local service_user="${MINIPC_SERVICE_USER}"
+
+    # Create admin user
+    if ! user_exists "$admin_user"; then
+        log_info "Creating $admin_user user..."
+        useradd -m -s /bin/bash -u 1000 "$admin_user"
+        usermod -aG sudo,adm,systemd-journal "$admin_user"
+        log_success "Created admin user: $admin_user"
+    else
+        log_info "User $admin_user already exists"
     fi
 
-    if ! id "moltbot" &>/dev/null; then
-        log "Creating moltbot user..."
-        useradd -r -s /usr/sbin/nologin -d /var/lib/moltbot -m moltbot
+    # Create service user
+    if ! user_exists "$service_user"; then
+        log_info "Creating $service_user user..."
+        useradd -r -s /usr/sbin/nologin -d "/var/lib/${service_user}" -m "$service_user"
+        log_success "Created service user: $service_user"
+    else
+        log_info "User $service_user already exists"
     fi
-}
-
-configure_sudo_moltbot() {
-    log "Configuring limited sudo for moltbot..."
-    cat > /etc/sudoers.d/moltbot << 'EOF'
-# Moltbot limited sudo permissions
-Cmnd_Alias MINIPC_CMDS = /usr/bin/apt update, /usr/bin/apt upgrade, /usr/bin/apt install *, \
-                          /usr/bin/systemctl start *, /usr/bin/systemctl stop *, \
-                          /usr/bin/systemctl restart *, /usr/bin/systemctl status *, \
-                          /bin/cat /var/lib/moltbot/vault/*, \
-                          /usr/bin/chown moltbot:moltbot /var/lib/moltbot/vault/*, \
-                          /usr/bin/chmod 600 /var/lib/moltbot/vault/*
-
-moltbot ALL=(ALL) NOPASSWD: SETENV: MINIPC_CMDS
-Defaults!EXEMPT sudoers
-EOF
-    chmod 440 /etc/sudoers.d/moltbot
-    visudo -c
 }
 
 configure_ssh() {
-    log "Configuring SSH on port 2222..."
+    local ssh_port="${SSH_PORT}"
+    local allowed_users="${SSH_ALLOWED_USERS}"
+
+    log_info "Configuring SSH on port $ssh_port..."
     mkdir -p /etc/ssh/sshd_config.d
 
-    cat > /etc/ssh/sshd_config.d/minipc.conf << 'EOF'
-Port 2222
+    cat > /etc/ssh/sshd_config.d/minipc.conf << EOF
+Port ${ssh_port}
 PermitRootLogin no
 PasswordAuthentication no
 PubkeyAuthentication yes
 X11Forwarding no
 AllowTcpForwarding no
-AllowUsers alan moltbot
+AllowUsers ${allowed_users}
 ClientAliveInterval 300
 ClientAliveCountMax 2
 LogLevel INFO
 EOF
 
     systemctl restart sshd
+    log_success "SSH configured on port $ssh_port"
 }
 
 configure_firewall() {
-    log "Configuring UFW firewall..."
+    local tcp_ports="${FIREWALL_ALLOW_TCP}"
+
+    log_info "Configuring UFW firewall..."
+
+    # Reset UFW to defaults
+    ufw --force reset
     ufw default deny incoming
     ufw default allow outgoing
-    ufw allow 2222/tcp comment 'SSH'
-    ufw allow 8080/tcp comment 'MoltBot HTTP'
-    ufw allow 8765/tcp comment 'MoltBot API'
+
+    # Allow configured TCP ports
+    for port in $tcp_ports; do
+        ufw allow "${port}/tcp" comment "Configured port"
+        log_info "Allowed port: ${port}/tcp"
+    done
+
     ufw --force enable
     systemctl enable ufw
+
+    log_success "Firewall configured"
 }
 
 configure_sysctl() {
-    log "Configuring kernel hardening..."
+    log_info "Configuring kernel hardening..."
     cat > /etc/sysctl.d/99-minipc.conf << 'EOF'
+# Network security
 kernel.randomize_va_space = 2
 net.ipv4.conf.all.rp_filter = 1
 net.ipv4.icmp_echo_ignore_broadcasts = 1
@@ -116,43 +115,46 @@ net.ipv4.conf.default.accept_redirects = 0
 net.ipv4.conf.all.send_redirects = 0
 net.ipv4.conf.default.send_redirects = 0
 net.ipv4.tcp_syncookies = 1
-fs.suid_dumpable = 0
-kernel.sysrq = 0
 net.ipv4.conf.all.accept_source_route = 0
 net.ipv6.conf.all.accept_source_route = 0
+
+# Core dumps
+fs.suid_dumpable = 0
+
+# Magic SysRq
+kernel.sysrq = 0
 EOF
     sysctl --system
+    log_success "Kernel hardening applied"
 }
 
 configure_fail2ban() {
-    log "Configuring fail2ban..."
-    cat > /etc/fail2ban/jail.local << 'EOF'
+    local ssh_port="${SSH_PORT}"
+
+    log_info "Configuring fail2ban..."
+    cat > /etc/fail2ban/jail.local << EOF
+[DEFAULT]
+bantime = 3600
+findtime = 600
+maxretry = 3
+
 [sshd]
 enabled = true
-port = 2222
-maxretry = 3
-bantime = 3600
-findtime = 600
+port = ${ssh_port}
 filter = sshd[mode=normal]
 logpath = /var/log/auth.log
-
-[minipc-http]
-enabled = true
-port = 8080
-maxretry = 5
-bantime = 3600
-findtime = 600
-filter = apache-auth
-logpath = /var/log/apache2/error.log
 EOF
 
     systemctl enable fail2ban
     systemctl start fail2ban
+    log_success "Fail2ban configured"
 }
 
 configure_audit() {
-    log "Configuring auditd..."
-    cat > /etc/audit/rules.d/minipc.rules << 'EOF'
+    local service_user="${MINIPC_SERVICE_USER}"
+
+    log_info "Configuring auditd..."
+    cat > /etc/audit/rules.d/minipc.rules << EOF
 # Monitor user logins
 -w /var/log/lastlog -p wa -k logins
 -w /var/run/faillock/ -p wa -k logins
@@ -161,8 +163,8 @@ configure_audit() {
 -w /etc/sudoers.d/ -p wa -k sudoers
 -w /usr/bin/sudo -p x -k exec
 
-# Monitor moltbot operations
--w /var/lib/moltbot/ -p wa -k moltbot
+# Monitor service user operations
+-w /var/lib/${service_user}/ -p wa -k ${service_user}
 
 # Monitor system configuration changes
 -w /etc/sysctl.conf -p wa -k sysctl
@@ -171,17 +173,27 @@ EOF
 
     systemctl enable auditd
     systemctl start auditd
+    log_success "Auditd configured"
 }
 
 configure_btrfs_snapper() {
-    log "Setting up Btrfs and Snapper..."
+    if [[ "${ENABLE_BTRFS_SNAPSHOTS:-false}" != "true" ]]; then
+        log_info "Btrfs snapshots disabled in config"
+        return 0
+    fi
+
+    log_info "Setting up Btrfs and Snapper..."
     apt-get install -y snapper btrfs-progs
 
     # Check if root is Btrfs
     if mountpoint -q / && [[ "$(stat -f -c %T /)" == "btrfs" ]]; then
-        log "Root is Btrfs, configuring Snapper..."
-        snapper create-config /
-        snapper set-config ALLOW_USERS="alan moltbot" SYNC_ACL="yes"
+        log_info "Root is Btrfs, configuring Snapper..."
+
+        local admin_user="${MINIPC_ADMIN_USER}"
+        local service_user="${MINIPC_SERVICE_USER}"
+
+        snapper create-config / 2>/dev/null || true
+        snapper set-config ALLOW_USERS="${admin_user} ${service_user}" SYNC_ACL="yes"
 
         # Create pre/post apt snapshot helpers
         mkdir -p /opt/minipc/scripts
@@ -207,26 +219,44 @@ SCRIPT
 DPkg::Pre-Invoke {"/opt/minipc/scripts/snapshot-apt-pre.sh"};
 DPkg::Post-Invoke {"/opt/minipc/scripts/snapshot-apt-post.sh"};
 EOF
+
+        log_success "Snapper configured for Btrfs snapshots"
     else
-        log "Warning: Root is not Btrfs, Snapper snapshots disabled"
+        log_warn "Root is not Btrfs, Snapper snapshots disabled"
     fi
 }
 
 create_directories() {
-    log "Creating application directories..."
+    local admin_user="${MINIPC_ADMIN_USER}"
+    local service_user="${MINIPC_SERVICE_USER}"
+
+    log_info "Creating application directories..."
+
+    # Core directories
     mkdir -p /opt/minipc/{scripts,config,data}
-    mkdir -p /var/lib/moltbot/{.moltbot,vault,logs}
-    mkdir -p /var/lib/anki/data
+    mkdir -p "${STATE_DIR}"
+
+    # Service user directories
+    mkdir -p "/var/lib/${service_user}"/{.openclaw,vault,logs}
+    mkdir -p "/var/log/${service_user}"
+
+    # App data directories
     mkdir -p /opt/minipc/data/{obsidian,anki}
 
-    chown -R moltbot:moltbot /var/lib/moltbot
-    chown -R alan:alan /opt/minipc/data
+    # Set ownership
+    chown -R "${service_user}:${service_user}" "/var/lib/${service_user}"
+    chown -R "${service_user}:${service_user}" "/var/log/${service_user}"
+    chown -R "${admin_user}:${admin_user}" /opt/minipc/data
+
+    log_success "Directories created"
 }
 
 configure_monitoring() {
-    log "Configuring logrotate for application logs..."
-    cat > /etc/logrotate.d/minipc << 'EOF'
-/var/log/moltbot/*.log {
+    local service_user="${MINIPC_SERVICE_USER}"
+
+    log_info "Configuring logrotate for application logs..."
+    cat > /etc/logrotate.d/minipc << EOF
+/var/log/${service_user}/*.log {
     daily
     rotate 7
     compress
@@ -235,17 +265,56 @@ configure_monitoring() {
     notifempty
 }
 EOF
+    log_success "Logrotate configured"
+}
+
+configure_hostname() {
+    local hostname="${MINIPC_HOSTNAME}"
+
+    log_info "Setting hostname to $hostname..."
+    hostnamectl set-hostname "$hostname"
+
+    # Update /etc/hosts if needed
+    if ! grep -q "$hostname" /etc/hosts; then
+        echo "127.0.1.1 $hostname" >> /etc/hosts
+    fi
+
+    log_success "Hostname set to $hostname"
+}
+
+install_tailscale() {
+    if [[ "${ENABLE_TAILSCALE:-false}" != "true" ]]; then
+        log_info "Tailscale disabled in config"
+        return 0
+    fi
+
+    log_info "Installing Tailscale..."
+
+    if command_exists tailscale; then
+        log_info "Tailscale already installed"
+        return 0
+    fi
+
+    curl -fsSL https://pkgs.tailscale.com/stable/debian/tailscale.gpg -o /usr/share/keyrings/tailscale-archive-keyring.gpg
+    echo "deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/debian bookworm main" > /etc/apt/sources.list.d/tailscale.list
+    apt-get update
+    apt-get install -y tailscale
+
+    systemctl enable tailscaled
+    systemctl start tailscaled
+
+    log_success "Tailscale installed. Run 'sudo tailscale up' to connect"
 }
 
 main() {
     require_debian12
 
-    log "=== Starting 01-system.sh ==="
+    log_info "=== Starting 01-system.sh ==="
 
     update_system
     install_base_packages
     create_users
-    configure_sudo_moltbot
+    configure_hostname
     configure_ssh
     configure_firewall
     configure_sysctl
@@ -254,8 +323,9 @@ main() {
     configure_btrfs_snapper
     create_directories
     configure_monitoring
+    install_tailscale
 
-    log "=== 01-system.sh complete ==="
+    log_success "=== 01-system.sh complete ==="
 }
 
 main

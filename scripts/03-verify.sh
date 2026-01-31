@@ -18,17 +18,17 @@ WARN=0
 
 check_pass() {
     echo -e "${GREEN}✓ PASS:${NC} $*"
-    ((PASS++))
+    PASS=$((PASS + 1))
 }
 
 check_fail() {
     echo -e "${RED}✗ FAIL:${NC} $*"
-    ((FAIL++))
+    FAIL=$((FAIL + 1))
 }
 
 check_warn() {
     echo -e "${YELLOW}⚠ WARN:${NC} $*"
-    ((WARN++))
+    WARN=$((WARN + 1))
 }
 
 verify_os() {

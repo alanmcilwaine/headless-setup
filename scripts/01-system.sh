@@ -137,16 +137,16 @@ configure_fail2ban() {
 bantime = 3600
 findtime = 600
 maxretry = 3
+backend = systemd
 
 [sshd]
 enabled = true
 port = ${ssh_port}
 filter = sshd[mode=normal]
-logpath = /var/log/auth.log
 EOF
 
     systemctl enable fail2ban
-    systemctl start fail2ban
+    systemctl restart fail2ban || systemctl start fail2ban
     log_success "Fail2ban configured"
 }
 

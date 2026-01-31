@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Common library functions
 
+# Set default STATE_DIR if not already set
+STATE_DIR="${STATE_DIR:-/var/lib/minipc-state}"
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -47,6 +50,14 @@ load_config() {
     fi
 }
 
+is_debian12() {
+    if [[ ! -f /etc/os-release ]]; then
+        return 1
+    fi
+    source /etc/os-release
+    [[ "$VERSION_ID" == "12" ]]
+}
+
 require_debian12() {
     if [[ ! -f /etc/os-release ]]; then
         log_error "Not a Debian system"
@@ -57,4 +68,12 @@ require_debian12() {
         log_error "This setup requires Debian 12, found: $VERSION_ID"
         exit 1
     fi
+}
+
+service_is_active() {
+    systemctl is-active --quiet "$1" 2>/dev/null
+}
+
+service_is_enabled() {
+    systemctl is-enabled --quiet "$1" 2>/dev/null
 }

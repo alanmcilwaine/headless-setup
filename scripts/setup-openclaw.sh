@@ -23,7 +23,7 @@ if [ -f ".dockerignore" ]; then
     sed -i '/^vendor\/$/d' .dockerignore 2>/dev/null || true
 fi
 
-# Create docker-compose.extra.yml with required mounts
+# Create docker-compose.extra.yml with required mounts and resource limits
 echo "Creating docker-compose.extra.yml..."
 cat > docker-compose.extra.yml << 'EOF'
 services:
@@ -33,12 +33,28 @@ services:
       - /home/openclaw/.openclaw:/home/node/.openclaw
       - /home/openclaw/data/workspace:/home/node/.openclaw/workspace
       - /home/openclaw:/home/openclaw
+    deploy:
+      resources:
+        limits:
+          cpus: '3.0'
+          memory: 8G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
   openclaw-cli:
     volumes:
       - openclaw-home:/home/node
       - /home/openclaw/.openclaw:/home/node/.openclaw
       - /home/openclaw/data/workspace:/home/node/.openclaw/workspace
       - /home/openclaw:/home/openclaw
+    deploy:
+      resources:
+        limits:
+          cpus: '3.0'
+          memory: 8G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 volumes:
   openclaw-home:
 EOF
@@ -76,46 +92,6 @@ echo "  - Gateway auth: token"
 echo "  - Install Gateway daemon: No (we'll use systemd)"
 echo ""
 ./docker-setup.sh
-
-echo ""
-echo "Creating OpenClaw start wrapper script..."
-cat > /opt/openclaw-source/start-openclaw.sh << 'WRAPPER'
-#!/bin/bash
-# OpenClaw startup wrapper - ensures proper environment and compose files
-set -euo pipefail
-
-export OPENCLAW_CONFIG_DIR=/home/openclaw/.openclaw
-export OPENCLAW_WORKSPACE_DIR=/home/openclaw/data/workspace
-export OPENCLAW_GATEWAY_PORT=18789
-export OPENCLAW_GATEWAY_BIND=loopback
-export OPENCLAW_HOME_VOLUME=openclaw-home
-export OPENCLAW_EXTRA_MOUNTS="/home/openclaw:/home/openclaw"
-
-# Ensure the extra compose file exists with correct mounts
-if [ ! -f docker-compose.extra.yml ]; then
-    echo "Creating docker-compose.extra.yml..."
-    cat > docker-compose.extra.yml << 'EOF'
-services:
-  openclaw-gateway:
-    volumes:
-      - openclaw-home:/home/node
-      - /home/openclaw/.openclaw:/home/node/.openclaw
-      - /home/openclaw/data/workspace:/home/node/.openclaw/workspace
-      - /home/openclaw:/home/openclaw
-  openclaw-cli:
-    volumes:
-      - openclaw-home:/home/node
-      - /home/openclaw/.openclaw:/home/node/.openclaw
-      - /home/openclaw/data/workspace:/home/node/.openclaw/workspace
-      - /home/openclaw:/home/openclaw
-volumes:
-  openclaw-home:
-EOF
-fi
-
-/usr/bin/docker compose up -d
-WRAPPER
-chmod +x /opt/openclaw-source/start-openclaw.sh
 
 echo ""
 echo "Setting up systemd service for auto-start..."

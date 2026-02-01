@@ -1,0 +1,35 @@
+[Unit]
+Description=OpenClaw Discord Bot (Docker)
+Documentation=https://github.com/openclaw/openclaw
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=10
+User=root
+WorkingDirectory=/opt/openclaw
+
+ExecStartPre=-/usr/bin/docker pull openclaw/agent:latest
+ExecStartPre=-/usr/bin/docker rm -f openclaw
+
+ExecStart=/usr/bin/docker run \
+    --name openclaw \
+    --rm \
+    --user 1000:1000 \
+    --env-file /opt/openclaw/.env \
+    -v /home/openclaw/data/obsidian-vault:/app/vaults/obsidian:rw \
+    -v /home/openclaw/data/anki-data:/app/data/anki:rw \
+    -v /home/openclaw/data/workspace:/app/workspace:rw \
+    -v /home/openclaw/data/calendar:/app/data/calendar:rw \
+    -v /home/openclaw/.openclaw:/app/.openclaw:ro \
+    --memory=8g \
+    --cpus=4.0 \
+    openclaw/agent:latest
+
+ExecStop=/usr/bin/docker stop -t 30 openclaw
+ExecStopPost=/usr/bin/docker rm -f openclaw
+
+[Install]
+WantedBy=multi-user.target

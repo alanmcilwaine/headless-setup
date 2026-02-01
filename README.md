@@ -5,52 +5,64 @@ Docker setup for running OpenClaw on my Intel N150 MiniPC (16GB RAM, 512GB stora
 ## Quick Start
 
 ```bash
-# Copy to MiniPC through ssh and run this command
+# Copy to MiniPC and run
 sudo ./setup.sh
 
-# Add the discord token
-sudo cp .env.example /opt/openclaw/.env
-sudo vi /opt/openclaw/.env
-
-# Start it
-sudo systemctl start openclaw
+# Add Discord bot token
+cd /opt/openclaw-source
+docker compose run --rm openclaw-cli providers add --provider discord --token YOUR_TOKEN
 ```
 
 ## What This Does
 
-- Installs Docker
-- Creates directories for my data:
+- Installs Docker and fail2ban
+- Clones OpenClaw from GitHub
+- Builds OpenClaw Docker image locally
+- Creates directories:
   - `/home/openclaw/data/obsidian-vault`
   - `/home/openclaw/data/anki-data`
   - `/home/openclaw/data/workspace`
   - `/home/openclaw/data/calendar`
-- Runs OpenClaw in a container with 4 CPU cores and 8GB RAM
-- Auto-starts on boot
+- Runs OpenClaw via Docker Compose
+- SSH on port 6969 with brute-force protection
 
 ## Security
 
-- **Docker container**: OpenClaw is isolated. If compromised, attackers can see your data but can't escape to the host or access other devices.
-- **Fail2ban**: Blocks brute force SSH attempts after 3 failures (1 hour ban).
-- **SSH on port 6969**: :)
+- **Docker isolation**: OpenClaw runs in container, can't escape to host
+- **Loopback binding**: Gateway only accessible from localhost
+- **Fail2ban**: Blocks brute force SSH attempts
+- **SSH on port 6969**: Non-standard port
 
-## Managing openclaw
+## Managing OpenClaw
 
 ```bash
-sudo systemctl start|stop|restart openclaw
-sudo journalctl -u openclaw -f
+cd /opt/openclaw-source
+
+# View status
+docker compose ps
+
+# View logs
+docker compose logs -f openclaw-gateway
+
+# Restart
+docker compose restart openclaw-gateway
+
+# Stop
+docker compose down
+
+# Start
+docker compose up -d
 ```
 
 ## Dev Tools (Optional)
-
-Install development tools (Rust, Go, Neovim, etc.):
 
 ```bash
 sudo ./scripts/install-dev-tools.sh
 ```
 
-This installs: zsh, git, neovim, tmux, fzf, ripgrep, fd, bat, Rust, Go, Node.js, uv, and more.
+Installs: zsh, git, neovim, tmux, fzf, ripgrep, fd, bat, Rust, Go, Node.js, uv
 
-## Uninstall 
+## Uninstall
 
 ```bash
 sudo ./scripts/uninstall.sh

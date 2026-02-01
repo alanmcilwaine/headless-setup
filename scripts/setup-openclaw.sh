@@ -29,6 +29,8 @@ export OPENCLAW_WORKSPACE_DIR=/home/openclaw/data/workspace
 export OPENCLAW_GATEWAY_PORT=18789
 export OPENCLAW_GATEWAY_BIND=loopback
 export OPENCLAW_HOME_VOLUME=openclaw-home
+# Fix: OpenClaw hardcodes /home/openclaw path, so we need to mount it
+export OPENCLAW_EXTRA_MOUNTS="/home/openclaw:/home/openclaw"
 
 # Create data directories
 echo "Creating data directories..."

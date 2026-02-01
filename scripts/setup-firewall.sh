@@ -18,9 +18,9 @@ echo "Setting default policies..."
 ufw default deny incoming
 ufw default allow outgoing
 
-# Allow SSH on port 2222
-echo "Allowing SSH on port 2222..."
-ufw allow 2222/tcp comment 'SSH'
+# Allow SSH on port 6969
+echo "Allowing SSH on port 6969..."
+ufw allow 6969/tcp comment 'SSH'
 
 # Allow loopback connections
 echo "Allowing loopback connections..."

@@ -34,7 +34,32 @@ echo "Starting and enabling Docker service..."
 systemctl start docker
 systemctl enable docker
 
-# 7. Add openclaw user to docker group if user exists
+# 7. Install fail2ban for brute force protection
+echo "Installing fail2ban for brute force protection..."
+apt-get install -y fail2ban
+
+# Configure fail2ban for SSH on port 6969
+cat > /etc/fail2ban/jail.local << 'EOF'
+[DEFAULT]
+bantime = 3600
+findtime = 600
+maxretry = 3
+
+[sshd]
+enabled = true
+port = 6969
+filter = sshd
+logpath = /var/log/auth.log
+maxretry = 3
+EOF
+
+# Start and enable fail2ban
+systemctl start fail2ban
+systemctl enable fail2ban
+
+echo "Fail2ban installed and configured for SSH on port 6969"
+
+# 8. Add openclaw user to docker group if user exists
 if id "openclaw" &>/dev/null; then
     echo "Adding openclaw user to docker group..."
     usermod -aG docker openclaw

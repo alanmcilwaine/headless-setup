@@ -27,9 +27,11 @@ sudo systemctl start openclaw
 - Runs OpenClaw in a container with 4 CPU cores and 8GB RAM
 - Auto-starts on boot
 
-## Security:
+## Security
 
-OpenClaw runs in a Docker container. If someone compromises it, they can access the data but can't escape to the host or access other devices at home. In this case, all they'll really see are the obsidian notes and calendar stuff.
+- **Docker container**: OpenClaw is isolated. If compromised, attackers can see your data but can't escape to the host or access other devices.
+- **Fail2ban**: Blocks brute force SSH attempts after 3 failures (1 hour ban).
+- **SSH on port 6969**: :)
 
 ## Managing openclaw
 

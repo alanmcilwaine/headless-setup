@@ -38,8 +38,12 @@ mkdir -p /home/openclaw/data/obsidian-vault
 mkdir -p /home/openclaw/data/anki-data
 mkdir -p /home/openclaw/data/calendar
 
-# Set ownership
-chown -R openclaw:openclaw /home/openclaw 2>/dev/null || true
+# Set ownership for container user (node = UID 1000)
+echo "Setting permissions for container user..."
+chown -R 1000:1000 /home/openclaw/.openclaw
+chown -R 1000:1000 /home/openclaw/data
+chmod -R 755 /home/openclaw/.openclaw
+chmod -R 755 /home/openclaw/data
 
 echo ""
 echo "Running OpenClaw docker-setup.sh..."

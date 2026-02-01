@@ -32,6 +32,7 @@ export OPENCLAW_HOME_VOLUME=openclaw-home
 
 # Create data directories
 echo "Creating data directories..."
+mkdir -p /home/openclaw
 mkdir -p "$OPENCLAW_CONFIG_DIR"
 mkdir -p "$OPENCLAW_WORKSPACE_DIR"
 mkdir -p /home/openclaw/data/obsidian-vault
@@ -40,10 +41,9 @@ mkdir -p /home/openclaw/data/calendar
 
 # Set ownership for container user (node = UID 1000)
 echo "Setting permissions for container user..."
-chown -R 1000:1000 /home/openclaw/.openclaw
-chown -R 1000:1000 /home/openclaw/data
-chmod -R 755 /home/openclaw/.openclaw
-chmod -R 755 /home/openclaw/data
+chown -R 1000:1000 /home/openclaw
+chmod -R 755 /home/openclaw
+chmod -R 700 /home/openclaw/.openclaw
 
 echo ""
 echo "Running OpenClaw docker-setup.sh..."

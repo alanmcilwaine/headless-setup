@@ -13,6 +13,23 @@ if ! command -v ufw &> /dev/null; then
     apt-get install -y ufw
 fi
 
+# Configure SSH to use port 6969
+echo "Configuring SSH to use port 6969..."
+if grep -q "^Port 22" /etc/ssh/sshd_config; then
+    # Replace existing Port 22 line
+    sed -i 's/^Port 22/Port 6969/' /etc/ssh/sshd_config
+elif grep -q "^#Port 22" /etc/ssh/sshd_config; then
+    # Uncomment and change Port 22
+    sed -i 's/^#Port 22/Port 6969/' /etc/ssh/sshd_config
+else
+    # Add Port line if not present
+    echo "Port 6969" >> /etc/ssh/sshd_config
+fi
+
+# Restart SSH service to apply changes
+echo "Restarting SSH service..."
+systemctl restart sshd || systemctl restart ssh
+
 # Set default policies
 echo "Setting default policies..."
 ufw default deny incoming

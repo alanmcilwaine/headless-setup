@@ -39,17 +39,19 @@ echo "Installing fail2ban for brute force protection..."
 apt-get install -y fail2ban
 
 # Configure fail2ban for SSH on port 6969
+# Using systemd backend since Debian 12 uses journald for SSH logs
 cat > /etc/fail2ban/jail.local << 'EOF'
 [DEFAULT]
 bantime = 3600
 findtime = 600
 maxretry = 3
+backend = systemd
 
 [sshd]
 enabled = true
 port = 6969
 filter = sshd
-logpath = /var/log/auth.log
+backend = systemd
 maxretry = 3
 EOF
 
